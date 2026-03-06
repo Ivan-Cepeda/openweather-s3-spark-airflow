@@ -1,0 +1,79 @@
+name: Data Engineering CI (Spark & Kafka)
+
+# 1. ¿Cuándo se ejecuta? Cada vez que hagas push a la rama principal
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  build-and-test:
+    # 2. Máquina virtual que nos presta GitHub (Ubuntu)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Clonar el repositorio
+        uses: actions/checkout@v3
+
+      - name: 🐍 Configurar Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
+
+      - name: 📦 Instalar dependencias de Python (Kafka)
+        run: |
+          python -m pip install --upgrade pip
+          pip install kafka-python-ng requests
+
+      - name: 🚀 Levantar Kafka y Zookeeper (Docker Compose)
+        run: |
+          cat << EOF > docker-compose.yml
+          version: '3'
+          services:
+            zookeeper:
+              image: confluentinc/cp-zookeeper:7.6.0
+              ports:
+                - "2181:2181"
+              environment:
+                ZOOKEEPER_CLIENT_PORT: 2181
+                ZOOKEEPER_TICK_TIME: 2000
+
+            kafka:
+              image: confluentinc/cp-kafka:7.6.0
+              depends_on:
+                - zookeeper
+              ports:
+                - "9092:9092"
+              environment:
+                KAFKA_BROKER_ID: 1
+                KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+                KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+                KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+                KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          EOF
+          docker compose up -d
+          
+          echo "Esperando 15 segundos a que Kafka inicie completamente..."
+          sleep 15
+
+      - name: ✨ Levantar Apache Spark (Master)
+        run: |
+          docker network create spark-net
+          # Usamos la imagen oficial de Bitnami para CI/CD por su ligereza y disponibilidad
+          docker run -d --net spark-net -p 8080:8080 -p 7077:7077 --name spark-master bitnami/spark:3.5.0 spark-class org.apache.spark.deploy.master.Master
+          
+          echo "Esperando 10 segundos a que Spark inicie..."
+          sleep 10
+
+      - name: 🔍 Validar Salud de la Infraestructura (Healthcheck)
+        run: |
+          echo "Contenedores corriendo actualmente en el Runner:"
+          docker ps
+          
+          # Validar puertos respondiendo
+          nc -zv localhost 9092 || echo "Kafka no está respondiendo"
+          nc -zv localhost 8080 || echo "Spark Master no está respondiendo"
+
+      # Aquí podrías agregar un paso extra para ejecutar tu script de Python (ej. python api_to_kafka.py)
+      # si utilizas Mock Data o variables de entorno para tu API Key.
