@@ -61,7 +61,7 @@ jobs:
         run: |
           docker network create spark-net
           # Usamos la imagen oficial de Bitnami para CI/CD por su ligereza y disponibilidad
-          docker run -d --net spark-net -p 8080:8080 -p 7077:7077 --name spark-master bitnami/spark:3.5.0 spark-class org.apache.spark.deploy.master.Master
+          docker run -d --net spark-net -p 8080:8080 -p 7077:7077 --name spark-master spark:4.0.1 /opt/spark/bin/spark-class
           
           echo "Esperando 10 segundos a que Spark inicie..."
           sleep 10
